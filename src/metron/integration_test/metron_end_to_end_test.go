@@ -6,11 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"github.com/cloudfoundry/dropsonde/events"
+	"github.com/cloudfoundry/dropsonde/signature"
 	"github.com/cloudfoundry/loggregatorlib/cfcomponent/instrumentation"
 	"github.com/cloudfoundry/loggregatorlib/cfcomponent/localip"
+	"github.com/cloudfoundry/loggregatorlib/logmessage"
 	"github.com/cloudfoundry/storeadapter"
 	"github.com/cloudfoundry/storeadapter/storerunner/etcdstorerunner"
 	"io/ioutil"
+	"metron/legacy_message/legacy_message_converter"
 	"net"
 	"net/http"
 	"os/exec"
@@ -116,6 +119,20 @@ var _ = Describe("Varz Endpoints", func() {
 			}).Should(Equal(expectedValue))
 		})
 
+		It("Increments the unmarshal error counter when it receives a malformed legacy message", func() {
+			agentListenerContext := getContext("legacyUnmarshaller")
+			Expect(agentListenerContext.Metrics[0].Name).To(Equal("unmarshalErrors"))
+			expectedValue := agentListenerContext.Metrics[0].Value.(float64) + 1
+
+			connection, _ := net.Dial("udp", "localhost:51160")
+			connection.Write([]byte("test-data"))
+
+			Eventually(func() interface{} {
+				agentListenerContext = getContext("legacyUnmarshaller")
+				return agentListenerContext.Metrics[0].Value
+			}).Should(Equal(expectedValue))
+		})
+
 		It("updates message aggregator metrics when it receives a message", func() {
 			context := getContext("MessageAggregator")
 			Expect(context.Metrics[3].Name).To(Equal("uncategorizedEvents"))
@@ -170,7 +187,7 @@ var _ = Describe("Varz Endpoints", func() {
 	Context("Legacy message forwarding", func() {
 		It("forwards messages to a healthy loggregator server", func(done Done) {
 			defer close(done)
-			testServer, _ := net.ListenPacket("udp", "localhost:3456")
+			testServer, _ := net.ListenPacket("udp", "localhost:3457")
 			defer testServer.Close()
 
 			node := storeadapter.StoreNode{
@@ -188,7 +205,22 @@ var _ = Describe("Varz Endpoints", func() {
 				ticker := time.NewTicker(10 * time.Millisecond)
 				defer ticker.Stop()
 				for {
-					connection.Write([]byte("test-data"))
+
+					legacyEnvelope := &logmessage.LogEnvelope{
+						RoutingKey: proto.String("fake-routing-key"),
+						Signature:  []byte{1, 2, 3},
+						LogMessage: &logmessage.LogMessage{
+							Message:     []byte{4, 5, 6},
+							MessageType: logmessage.LogMessage_OUT.Enum(),
+							Timestamp:   proto.Int64(123),
+							AppId:       proto.String("fake-app-id"),
+							SourceId:    proto.String("fake-source-id"),
+							SourceName:  proto.String("fake-source-name"),
+						},
+					}
+					marshalledLegacyEnvelope, _ := proto.Marshal(legacyEnvelope)
+
+					connection.Write(marshalledLegacyEnvelope)
 
 					select {
 					case <-stopWrite:
@@ -200,10 +232,27 @@ var _ = Describe("Varz Endpoints", func() {
 
 			readBuffer := make([]byte, 65535)
 			readCount, _, _ := testServer.ReadFrom(readBuffer)
-			readData := make([]byte, readCount)
-			copy(readData, readBuffer[:readCount])
+			readData := make([]byte, readCount-signature.SIGNATURE_LENGTH)
+			copy(readData, readBuffer[signature.SIGNATURE_LENGTH:readCount])
 
-			Expect(readData).Should(BeEquivalentTo("test-data"))
+			dropsondeEnvelope := &events.Envelope{
+				Origin:    proto.String(legacy_message_converter.LEGACY_DROPSONDE_ORIGIN),
+				EventType: events.Envelope_LogMessage.Enum(),
+				LogMessage: &events.LogMessage{
+					Message:        []byte{4, 5, 6},
+					MessageType:    events.LogMessage_OUT.Enum(),
+					Timestamp:      proto.Int64(123),
+					AppId:          proto.String("fake-app-id"),
+					SourceType:     proto.String("fake-source-name"),
+					SourceInstance: proto.String("fake-source-id"),
+				},
+			}
+
+			receivedEnvelope := &events.Envelope{}
+			err := proto.Unmarshal(readData, receivedEnvelope)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(receivedEnvelope).To(Equal(dropsondeEnvelope))
 		})
 	})
 

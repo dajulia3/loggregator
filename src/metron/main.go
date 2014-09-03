@@ -12,11 +12,14 @@ import (
 	"github.com/cloudfoundry/loggregatorlib/cfcomponent/instrumentation"
 	"github.com/cloudfoundry/loggregatorlib/cfcomponent/registrars/collectorregistrar"
 	"github.com/cloudfoundry/loggregatorlib/clientpool"
+	"github.com/cloudfoundry/loggregatorlib/logmessage"
 	"github.com/cloudfoundry/storeadapter"
 	"github.com/cloudfoundry/storeadapter/etcdstoreadapter"
 	"github.com/cloudfoundry/storeadapter/workerpool"
 	"github.com/cloudfoundry/yagnats"
 	"github.com/cloudfoundry/yagnats/fakeyagnats"
+	"metron/legacy_message/legacy_message_converter"
+	"metron/legacy_message/legacy_unmarshaller"
 	"metron/message_aggregator"
 	"metron/varz_forwarder"
 	"strconv"
@@ -39,9 +42,10 @@ func main() {
 	flag.Parse()
 	config, logger := parseConfig(*debug, *configFilePath, *logFilePath)
 
-	// TODO: delete next two lines when "legacy" format goes away
+	// TODO: delete next three lines when "legacy" format goes away
 	legacyMessageListener, legacyMessageChan := agentlistener.NewAgentListener("localhost:"+strconv.Itoa(config.LegacyIncomingMessagesPort), logger, "legacyAgentListener")
-	legacyPoolEtcdAdapter, legacyClientPool := initializeClientPool(config, logger, config.LoggregatorLegacyPort)
+	legacyUnmarshaller := legacy_unmarshaller.NewLegacyUnmarshaller(logger)
+	legacyConverter := legacy_message_converter.NewLegacyMessageConverter(logger)
 
 	dropsondeMessageListener, dropsondeMessageChan := agentlistener.NewAgentListener("localhost:"+strconv.Itoa(config.DropsondeIncomingMessagesPort), logger, "dropsondeAgentListener")
 	dropsondePoolEtcdAdapter, dropsondeClientPool := initializeClientPool(config, logger, config.LoggregatorDropsondePort)
@@ -52,8 +56,9 @@ func main() {
 	messageAggregator := message_aggregator.NewMessageAggregator(logger)
 
 	instrumentables := []instrumentation.Instrumentable{
-		// TODO: delete next line when "legacy" format goes away
+		// TODO: delete next two lines when "legacy" format goes away
 		legacyMessageListener,
+		legacyUnmarshaller,
 		dropsondeMessageListener,
 		unmarshaller,
 		varzForwarder,
@@ -64,11 +69,6 @@ func main() {
 	component := InitializeComponent(DefaultRegistrarFactory, config, logger, instrumentables)
 
 	go startMonitoringEndpoints(component, logger)
-
-	// TODO: delete next three lines when "legacy" format goes away
-	go legacyMessageListener.Start()
-	go legacyClientPool.RunUpdateLoop(legacyPoolEtcdAdapter, "/healthstatus/loggregator/"+config.Zone, nil, time.Duration(config.EtcdQueryIntervalMilliseconds)*time.Millisecond)
-	go forwardMessagesToLoggregator(legacyClientPool, legacyMessageChan, logger)
 
 	go dropsondeMessageListener.Start()
 
@@ -88,6 +88,12 @@ func main() {
 	go signMessages(config.SharedSecret, reMarshalledMessageChan, signedMessageChan)
 
 	go dropsondeClientPool.RunUpdateLoop(dropsondePoolEtcdAdapter, "/healthstatus/loggregator/"+config.Zone, nil, time.Duration(config.EtcdQueryIntervalMilliseconds)*time.Millisecond)
+
+	// TODO: delete next four lines when "legacy" format goes away
+	go legacyMessageListener.Start()
+	legacyEnvelopeChan := make(chan *logmessage.LogEnvelope)
+	go legacyUnmarshaller.Run(legacyMessageChan, legacyEnvelopeChan)
+	go legacyConverter.Run(legacyEnvelopeChan, aggregatedDropsondeEventChan)
 
 	forwardMessagesToLoggregator(dropsondeClientPool, signedMessageChan, logger)
 }
@@ -126,7 +132,6 @@ type Config struct {
 	EtcdUrls                      []string
 	EtcdMaxConcurrentRequests     int
 	EtcdQueryIntervalMilliseconds int
-	LoggregatorLegacyPort         int
 	LoggregatorDropsondePort      int
 	SharedSecret                  string
 }
