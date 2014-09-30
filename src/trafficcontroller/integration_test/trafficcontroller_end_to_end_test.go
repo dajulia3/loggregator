@@ -153,6 +153,43 @@ var _ = Describe("TrafficController", func() {
 				Expect(errMsg).To(BeEquivalentTo("invalid request: unexpected path: /invalid-path\n"))
 			})
 		})
+
+		Context("Firehose", func() {
+			It("indicates authorization failure when a nonprivileged user requests firehose messages", func() {
+				println("Entered test that will fail")
+				client4 := &traffic_controller_client.TrafficControllerClient{
+					ApiEndpoint: fmt.Sprintf("ws://%v:%v/%v", localIPAddress, 4566, "firehose"),
+				}
+				err, response := client4.Start()
+
+				Expect(err).To(HaveOccurred())
+
+				responseBody, _ := ioutil.ReadAll(response.Body)
+				Expect(responseBody).To(BeEquivalentTo("You are not authorized. Error: Invalid authorization"))
+				println("Leaving test that should have failed")
+			})
+
+			It("passes messages through for every app for uaa admins", func() {
+				//							FakeAuthServer.start({"jti":"b2c4bfd7-9b24-4d11-971d-52b85eea5d7d","sub":"a0358abb-1d92-4195-b349-a7edec6e9fa9","scope":["uaa.admin"],"client_id":"cf","cid":"cf","grant_type":"password","user_id":"a0358abb-1d92-4195-b349-a7edec6e9fa9","user_name":"marissa","email":"marissa@test.org","iat":1412017445,"exp":1412060645,"iss":"http://localhost:8080/uaa/oauth/token","aud":null})
+
+				println("entered test that should pass")
+				client5 := &traffic_controller_client.TrafficControllerClient{ApiEndpoint: fmt.Sprintf("ws://%v:%v/%v", localIPAddress, 4566, "firehose")}
+				go client5.Start()
+				var request *http.Request
+				Eventually(fakeDoppler.TrafficControllerConnected, 10).Should(Receive(&request))
+				Expect(request.URL.Path).To(Equal("/firehose"))
+
+				messageBody := []byte("CUSTOM Doppler MESSAGE")
+				fakeDoppler.SendLogMessage(messageBody)
+				Eventually(func() bool {
+					return client5.DidReceiveLegacyMessage(messageBody)
+				}, 5).Should(BeTrue())
+
+				client5.Stop()
+
+				println("Leaving test that should pass")
+			})
+		})
 	})
 })
 

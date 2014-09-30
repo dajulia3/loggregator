@@ -229,9 +229,10 @@ func setupMonitoring(proxy *legacyproxy.Proxy, config *Config, logger *gosteno.L
 
 func makeDopplerProxy(adapter storeadapter.StoreAdapter, config *Config, logger *gosteno.Logger, handlerProvider dopplerproxy.HandlerProvider) *dopplerproxy.Proxy {
 	authorizer := authorization.NewLogAccessAuthorizer(config.ApiHost, config.SkipCertVerify)
+	adminAuthorizer := authorization.NewAdminAccessAuthorizer(config.ApiHost, config.SkipCertVerify)
 	provider := MakeProvider(adapter, "/healthstatus/doppler", config.DopplerPort, logger)
 	cgc := channel_group_connector.NewChannelGroupConnector(provider, newWebsocketListener, marshaller.DropsondeLogMessage, logger)
-	proxy := dopplerproxy.NewDopplerProxy(authorizer, handlerProvider, cgc, config.Config, logger)
+	proxy := dopplerproxy.NewDopplerProxy(authorizer, adminAuthorizer, handlerProvider, cgc, config.Config, logger)
 	return proxy
 }
 

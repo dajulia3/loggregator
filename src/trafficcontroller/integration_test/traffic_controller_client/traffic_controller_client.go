@@ -14,7 +14,6 @@ type TrafficControllerClient struct {
 	callback  func()
 
 	ApiEndpoint      string
-	websocket        *gorilla.Conn
 	receivedMessages [][]byte
 	stop             chan struct{}
 	done             chan struct{}

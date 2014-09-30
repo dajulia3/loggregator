@@ -71,6 +71,16 @@ var _ = Describe("ChannelGroupConnector", func() {
 					Eventually(fakeListeners[0].ConnectedHost).Should(Equal("ws://10.0.0.1:1234/apps/abc123/recentlogs"))
 				})
 
+				It("opens a listener with the firehose path", func() {
+					channelConnector := channel_group_connector.NewChannelGroupConnector(provider, listenerConstructor, marshaller.DropsondeLogMessage, logger)
+					outputChan := make(chan []byte, 10)
+					stopChan := make(chan struct{})
+					defer close(stopChan)
+					go channelConnector.Connect("/firehose", "firehose", outputChan, stopChan, true)
+
+					Eventually(fakeListeners[0].ConnectedHost).Should(Equal("ws://10.0.0.1:1234/firehose"))
+				})
+
 				It("puts messages on the channel received by the listener", func() {
 					channelConnector := channel_group_connector.NewChannelGroupConnector(provider, listenerConstructor, marshaller.DropsondeLogMessage, logger)
 					outputChan := make(chan []byte)

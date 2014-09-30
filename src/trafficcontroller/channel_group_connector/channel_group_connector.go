@@ -75,10 +75,18 @@ loop:
 }
 
 func (connector *channelGroupConnector) connectToServer(serverAddress string, path string, appId string, messagesChan chan<- []byte, stopChan <-chan struct{}) {
+	//func (connector *channelGroupConnector) connectToServer(thing Thing, messagesChan chan<- []byte, stopChan <-chan struct{}) {
 	l := connector.listenerConstructor()
-	serverUrlForAppId := fmt.Sprintf("ws://%s/apps/%s%s", serverAddress, appId, path)
 
-	err := l.Start(serverUrlForAppId, appId, messagesChan, stopChan)
+	var serverUrl string
+
+	if appId == "firehose" {
+		serverUrl = fmt.Sprintf("ws://%s/firehose", serverAddress)
+	} else {
+		serverUrl = fmt.Sprintf("ws://%s/apps/%s%s", serverAddress, appId, path)
+	}
+
+	err := l.Start(serverUrl, appId, messagesChan, stopChan)
 
 	if err != nil {
 		errorMsg := fmt.Sprintf("proxy: error connecting to %s: %s", serverAddress, err.Error())
