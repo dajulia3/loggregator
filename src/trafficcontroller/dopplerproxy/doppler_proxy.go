@@ -7,27 +7,23 @@ import (
 	"github.com/cloudfoundry/loggregatorlib/cfcomponent"
 	"github.com/cloudfoundry/loggregatorlib/cfcomponent/instrumentation"
 	"github.com/cloudfoundry/loggregatorlib/logmessage"
-	"github.com/cloudfoundry/loggregatorlib/server/handlers"
-//	"trafficcontroller/doppler_endpoint"
 	"net/http"
 	"net/url"
 	"regexp"
 	"time"
 	"trafficcontroller/authorization"
 	"trafficcontroller/channel_group_connector"
-
+	"trafficcontroller/doppler_endpoint"
 )
 
 const (
 	FIREHOSE_ID = "firehose"
 )
 
-var WebsocketKeepAliveDuration = 30 * time.Second
-
 type Proxy struct {
 	logAuthorize    authorization.LogAccessAuthorizer
 	adminAuthorize  authorization.AdminAccessAuthorizer
-	handlerProvider HandlerProvider
+	handlerProvider doppler_endpoint.HandlerProvider
 	connector       channel_group_connector.ChannelGroupConnector
 	logger          *gosteno.Logger
 	cfcomponent.Component
@@ -35,27 +31,12 @@ type Proxy struct {
 
 type Authorizer func(appId, authToken string, logger *gosteno.Logger) bool
 
-type HandlerProvider func(string, <-chan []byte, *gosteno.Logger) http.Handler
-
-func DefaultHandlerProvider(endpoint string, messages <-chan []byte, logger *gosteno.Logger) http.Handler {
-	switch endpoint {
-	case "recentlogs":
-		return handlers.NewHttpHandler(messages, logger)
-	case "stream":
-		fallthrough
-	default:
-		return handlers.NewWebsocketHandler(messages, WebsocketKeepAliveDuration, logger)
-	}
-}
-
-func NewDopplerProxy(
-	logAuthorize authorization.LogAccessAuthorizer,
+func NewDopplerProxy(logAuthorize authorization.LogAccessAuthorizer,
 	adminAuthorizer authorization.AdminAccessAuthorizer,
-	handlerProvider HandlerProvider,
+	handlerProvider doppler_endpoint.HandlerProvider,
 	connector channel_group_connector.ChannelGroupConnector,
 	config cfcomponent.Config,
-	logger *gosteno.Logger,
-) *Proxy {
+	logger *gosteno.Logger) *Proxy {
 	var instrumentables []instrumentation.Instrumentable
 
 	cfc, err := cfcomponent.NewComponent(
@@ -102,9 +83,7 @@ func (proxy *Proxy) serveFirehose(writer http.ResponseWriter, request *http.Requ
 	clientAddress := request.RemoteAddr
 	authToken := getAuthToken(request)
 
-	endpoint := FIREHOSE_ID
-	appId := FIREHOSE_ID
-	reconnect := true
+	dopplerEndpont := doppler_endpoint.NewDopplerEndpoint(FIREHOSE_ID, FIREHOSE_ID, true, doppler_endpoint.WebsocketHandlerProvider)
 
 	authorizer := func(appId, authToken string, logger *gosteno.Logger) bool {
 		return proxy.adminAuthorize(authToken, logger)
@@ -118,7 +97,9 @@ func (proxy *Proxy) serveFirehose(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 
-	proxy.serveWithDoppler(writer, request, endpoint, appId, reconnect)
+	//proxy.serveWithDoppler(writer, request, endpoint, appId, reconnect)
+	proxy.serveWithDoppler(writer, request, dopplerEndpont)
+
 }
 
 func (proxy *Proxy) serveAppLogs(writer http.ResponseWriter, request *http.Request) {
@@ -154,20 +135,28 @@ func (proxy *Proxy) serveAppLogs(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 
-	endpoint := matches[2]
-	reconnect := endpoint != "recentlogs"
+	var endpoint_type = matches[2]
+	reconnect := endpoint_type != "recentlogs"
 
-	proxy.serveWithDoppler(writer, request, endpoint, appId, reconnect)
+	var dopplerEndpoint doppler_endpoint.DopplerEndpoint
+
+	if endpoint_type == "recentlogs" {
+		dopplerEndpoint = doppler_endpoint.NewDopplerEndpoint(endpoint_type, appId, reconnect, doppler_endpoint.HttpHandlerProvider)
+	} else {
+		dopplerEndpoint = doppler_endpoint.NewDopplerEndpoint(endpoint_type, appId, reconnect, doppler_endpoint.WebsocketHandlerProvider)
+	}
+
+	proxy.serveWithDoppler(writer, request, dopplerEndpoint)
 }
 
-func (proxy *Proxy) serveWithDoppler(writer http.ResponseWriter, request *http.Request, endpoint, appId string, reconnect bool) {
+func (proxy *Proxy) serveWithDoppler(writer http.ResponseWriter, request *http.Request, dopplerEndpoint doppler_endpoint.DopplerEndpoint) {
 	messagesChan := make(chan []byte, 100)
 	stopChan := make(chan struct{})
 	defer close(stopChan)
 
-	go proxy.connector.Connect("/"+endpoint, appId, messagesChan, stopChan, reconnect)
+	go proxy.connector.Connect(dopplerEndpoint, messagesChan, stopChan)
 
-	handler := proxy.handlerProvider(endpoint, messagesChan, proxy.logger)
+	handler := proxy.handlerProvider(messagesChan, proxy.logger)
 	handler.ServeHTTP(writer, request)
 }
 

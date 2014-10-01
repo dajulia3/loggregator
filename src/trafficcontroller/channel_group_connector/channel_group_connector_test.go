@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 	"trafficcontroller/channel_group_connector"
+	"trafficcontroller/doppler_endpoint"
 	"trafficcontroller/listener"
 	"trafficcontroller/serveraddressprovider"
 
@@ -66,7 +67,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 					outputChan := make(chan []byte, 10)
 					stopChan := make(chan struct{})
 					defer close(stopChan)
-					go channelConnector.Connect("/recentlogs", "abc123", outputChan, stopChan, true)
+					dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("recentlogs", "abc123", true, doppler_endpoint.HttpHandlerProvider)
+					go channelConnector.Connect(dopplerEndpoint, outputChan, stopChan)
 
 					Eventually(fakeListeners[0].ConnectedHost).Should(Equal("ws://10.0.0.1:1234/apps/abc123/recentlogs"))
 				})
@@ -76,7 +78,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 					outputChan := make(chan []byte, 10)
 					stopChan := make(chan struct{})
 					defer close(stopChan)
-					go channelConnector.Connect("/firehose", "firehose", outputChan, stopChan, true)
+					dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("firehose", "firehose", true, doppler_endpoint.WebsocketHandlerProvider)
+					go channelConnector.Connect(dopplerEndpoint, outputChan, stopChan)
 
 					Eventually(fakeListeners[0].ConnectedHost).Should(Equal("ws://10.0.0.1:1234/firehose"))
 				})
@@ -86,7 +89,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 					outputChan := make(chan []byte)
 
 					go func() {
-						channelConnector.Connect("/recentlogs", "abc123", outputChan, make(chan struct{}), false)
+						dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("recentlogs", "abc123", false, doppler_endpoint.HttpHandlerProvider)
+						channelConnector.Connect(dopplerEndpoint, outputChan, make(chan struct{}))
 					}()
 
 					Eventually(outputChan).Should(Receive(Equal(expectedMessage1)))
@@ -110,7 +114,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 					outputChan := make(chan []byte)
 
 					go func() {
-						channelConnector.Connect("/recentlogs", "abc123", outputChan, make(chan struct{}), false)
+						dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("recentlogs", "abc123", false, doppler_endpoint.HttpHandlerProvider)
+						channelConnector.Connect(dopplerEndpoint, outputChan, make(chan struct{}))
 						close(done)
 					}()
 
@@ -155,7 +160,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 
 					stopChan := make(chan struct{})
 					defer close(stopChan)
-					go channelConnector.Connect("/stream", "abc123", outputChan, stopChan, true)
+					dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("stream", "abc123", true, doppler_endpoint.WebsocketHandlerProvider)
+					go channelConnector.Connect(dopplerEndpoint, outputChan, stopChan)
 
 					Eventually(func() int { return len(outputChan) }).Should(BeNumerically(">", 1))
 				})
@@ -165,7 +171,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 					outputChan := make(chan []byte, 10)
 					stopChan := make(chan struct{})
 					defer close(stopChan)
-					go channelConnector.Connect("/stream", "abc123", outputChan, stopChan, true)
+					dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("stream", "abc123", true, doppler_endpoint.WebsocketHandlerProvider)
+					go channelConnector.Connect(dopplerEndpoint, outputChan, stopChan)
 
 					Eventually(fakeListeners[0].ConnectedHost).Should(Equal("ws://10.0.0.1:1234/apps/abc123/stream"))
 				})
@@ -177,7 +184,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 					stopChan := make(chan struct{})
 
 					go func() {
-						channelConnector.Connect("/stream", "abc123", outputChan, stopChan, true)
+						dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("stream", "abc123", true, doppler_endpoint.WebsocketHandlerProvider)
+						channelConnector.Connect(dopplerEndpoint, outputChan, stopChan)
 						close(done)
 					}()
 
@@ -216,8 +224,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 
 					stopChan := make(chan struct{})
 					defer close(stopChan)
-
-					go channelConnector.Connect("/stream", "abc123", outputChan, stopChan, false)
+					dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("stream", "abc123", false, doppler_endpoint.WebsocketHandlerProvider)
+					go channelConnector.Connect(dopplerEndpoint, outputChan, stopChan)
 
 					counts := make([]int32, 2)
 
@@ -239,7 +247,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 					done := make(chan struct{})
 
 					go func() {
-						channelConnector.Connect("/stream", "abc123", outputChan, stopChan, true)
+						dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("stream", "abc123", true, doppler_endpoint.WebsocketHandlerProvider)
+						channelConnector.Connect(dopplerEndpoint, outputChan, stopChan)
 						close(done)
 					}()
 
@@ -272,7 +281,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 
 				stopChan := make(chan struct{})
 				defer close(stopChan)
-				go channelConnector.Connect("/stream", "abc123", messageChan1, stopChan, false)
+				dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("stream", "abc123", false, doppler_endpoint.WebsocketHandlerProvider)
+				go channelConnector.Connect(dopplerEndpoint, messageChan1, stopChan)
 
 				msg := &[]byte{}
 				Eventually(messageChan1).Should(Receive(msg))
@@ -307,7 +317,8 @@ var _ = Describe("ChannelGroupConnector", func() {
 
 				stopChan := make(chan struct{})
 				defer close(stopChan)
-				go channelConnector.Connect("/stream", "abc123", outputChan, stopChan, true)
+				dopplerEndpoint := doppler_endpoint.NewDopplerEndpoint("stream", "abc123", true, doppler_endpoint.WebsocketHandlerProvider)
+				go channelConnector.Connect(dopplerEndpoint, outputChan, stopChan)
 
 				msg := <-outputChan
 				receivedEnvelope := &events.Envelope{}

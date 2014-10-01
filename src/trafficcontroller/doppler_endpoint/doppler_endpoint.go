@@ -1,32 +1,32 @@
 package doppler_endpoint
 
 import (
-	"net/http"
+	"fmt"
 	"github.com/cloudfoundry/gosteno"
 	"github.com/cloudfoundry/loggregatorlib/server/handlers"
+	"net/http"
 	"time"
 )
 
 var WebsocketKeepAliveDuration = 30 * time.Second
 
-
-type DopplerConnector struct{
-	Endpoint string
-	StreamId string
+type DopplerEndpoint struct {
+	Endpoint  string
+	StreamId  string
 	Reconnect bool
 	HProvider HandlerProvider
 }
 
-func NewDopplerConnector(
-  endpoint string,
-  streamId string,
-  reconnect bool,
+func NewDopplerEndpoint(
+	endpoint string,
+	streamId string,
+	reconnect bool,
 	hProvider HandlerProvider,
-) *DopplerConnector {
+) DopplerEndpoint {
 
-  return &DopplerConnector{
-		Endpoint: endpoint,
-		StreamId: streamId,
+	return DopplerEndpoint{
+		Endpoint:  endpoint,
+		StreamId:  streamId,
 		Reconnect: reconnect,
 		HProvider: hProvider,
 	}
@@ -40,4 +40,12 @@ func HttpHandlerProvider(messages <-chan []byte, logger *gosteno.Logger) http.Ha
 
 func WebsocketHandlerProvider(messages <-chan []byte, logger *gosteno.Logger) http.Handler {
 	return handlers.NewWebsocketHandler(messages, WebsocketKeepAliveDuration, logger)
+}
+
+func (endpoint *DopplerEndpoint) GetPath() string {
+	if endpoint.Endpoint == "firehose" {
+		return "/" + endpoint.Endpoint
+	} else {
+		return fmt.Sprintf("/apps/%s/%s", endpoint.StreamId, endpoint.Endpoint)
+	}
 }

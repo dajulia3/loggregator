@@ -14,6 +14,7 @@ import (
 	"github.com/cloudfoundry/gosteno"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"trafficcontroller/doppler_endpoint"
 )
 
 var _ = Describe("ServeHTTP", func() {
@@ -26,8 +27,7 @@ var _ = Describe("ServeHTTP", func() {
 		fakeConnector *fakeChannelGroupConnector
 	)
 
-	var fakeHandlerProvider = func(endpoint string, messages <-chan []byte, logger *gosteno.Logger) http.Handler {
-		fakeHandler.endpoint = endpoint
+	var fakeHandlerProvider = func(messages <-chan []byte, logger *gosteno.Logger) http.Handler {
 		fakeHandler.messages = messages
 		return fakeHandler
 	}
@@ -135,7 +135,6 @@ var _ = Describe("ServeHTTP", func() {
 
 			proxy.ServeHTTP(recorder, req)
 
-			Expect(fakeHandler.endpoint).To(Equal("stream"))
 			Expect(fakeHandler.messages).ToNot(BeNil())
 
 			Expect(fakeHandler.called).To(BeTrue())
@@ -147,8 +146,7 @@ var _ = Describe("ServeHTTP", func() {
 
 			proxy.ServeHTTP(recorder, req)
 
-			Eventually(fakeConnector.getPath).Should(Equal("/stream"))
-			Eventually(fakeConnector.getAppId).Should(Equal("abc123"))
+			Eventually(fakeConnector.getPath).Should(Equal("stream"))
 			Eventually(fakeConnector.getReconnect).Should(BeTrue())
 		})
 
@@ -188,7 +186,7 @@ var _ = Describe("ServeHTTP", func() {
 
 			proxy.ServeHTTP(recorder, req)
 
-			Eventually(fakeConnector.getPath).Should(Equal("/firehose"))
+			Eventually(fakeConnector.getPath).Should(Equal("firehose"))
 			Eventually(fakeConnector.getAppId).Should(Equal("firehose"))
 			Eventually(fakeConnector.getReconnect).Should(BeTrue())
 		})
@@ -229,7 +227,7 @@ var _ = Describe("DefaultHandlerProvider", func() {
 	It("returns an HTTP handler for .../recentlogs", func() {
 		httpHandler := handlers.NewHttpHandler(make(chan []byte), loggertesthelper.Logger())
 
-		target := dopplerproxy.DefaultHandlerProvider("recentlogs", make(chan []byte), loggertesthelper.Logger())
+		target := doppler_endpoint.HttpHandlerProvider(make(chan []byte), loggertesthelper.Logger())
 
 		Expect(target).To(BeAssignableToTypeOf(httpHandler))
 	})
@@ -237,7 +235,7 @@ var _ = Describe("DefaultHandlerProvider", func() {
 	It("returns a Websocket handler for .../stream", func() {
 		wsHandler := handlers.NewWebsocketHandler(make(chan []byte), time.Minute, loggertesthelper.Logger())
 
-		target := dopplerproxy.DefaultHandlerProvider("stream", make(chan []byte), loggertesthelper.Logger())
+		target := doppler_endpoint.WebsocketHandlerProvider(make(chan []byte), loggertesthelper.Logger())
 
 		Expect(target).To(BeAssignableToTypeOf(wsHandler))
 	})
@@ -245,22 +243,20 @@ var _ = Describe("DefaultHandlerProvider", func() {
 	It("returns a Websocket handler for anything else", func() {
 		wsHandler := handlers.NewWebsocketHandler(make(chan []byte), time.Minute, loggertesthelper.Logger())
 
-		target := dopplerproxy.DefaultHandlerProvider("other", make(chan []byte), loggertesthelper.Logger())
+		target := doppler_endpoint.WebsocketHandlerProvider(make(chan []byte), loggertesthelper.Logger())
 
 		Expect(target).To(BeAssignableToTypeOf(wsHandler))
 	})
 })
 
 type fakeChannelGroupConnector struct {
-	messages  chan []byte
-	path      string
-	appId     string
-	reconnect bool
-	stopped   bool
+	messages        chan []byte
+	dopplerEndpoint doppler_endpoint.DopplerEndpoint
+	stopped         bool
 	sync.Mutex
 }
 
-func (f *fakeChannelGroupConnector) Connect(path string, appId string, messagesChan chan<- []byte, stopChan <-chan struct{}, reconnect bool) {
+func (f *fakeChannelGroupConnector) Connect(dopplerEndpoint doppler_endpoint.DopplerEndpoint, messagesChan chan<- []byte, stopChan <-chan struct{}) {
 
 	go func() {
 		for m := range f.messages {
@@ -277,27 +273,25 @@ func (f *fakeChannelGroupConnector) Connect(path string, appId string, messagesC
 
 	f.Lock()
 	defer f.Unlock()
-	f.path = path
-	f.appId = appId
-	f.reconnect = reconnect
+	f.dopplerEndpoint = dopplerEndpoint
 }
 
 func (f *fakeChannelGroupConnector) getPath() string {
 	f.Lock()
 	defer f.Unlock()
-	return f.path
+	return f.dopplerEndpoint.Endpoint
 }
 
 func (f *fakeChannelGroupConnector) getAppId() string {
 	f.Lock()
 	defer f.Unlock()
-	return f.appId
+	return f.dopplerEndpoint.StreamId
 }
 
 func (f *fakeChannelGroupConnector) getReconnect() bool {
 	f.Lock()
 	defer f.Unlock()
-	return f.reconnect
+	return f.dopplerEndpoint.Reconnect
 }
 
 func (f *fakeChannelGroupConnector) Stopped() bool {

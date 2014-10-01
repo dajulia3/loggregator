@@ -24,6 +24,7 @@ import (
 	"github.com/cloudfoundry/yagnats"
 	"github.com/cloudfoundry/yagnats/fakeyagnats"
 	"trafficcontroller/channel_group_connector"
+	"trafficcontroller/doppler_endpoint"
 	"trafficcontroller/dopplerproxy"
 	"trafficcontroller/legacyproxy"
 	"trafficcontroller/listener"
@@ -127,7 +128,7 @@ func main() {
 	adapter := DefaultStoreAdapterProvider(config.EtcdUrls, config.EtcdMaxConcurrentRequests)
 	adapter.Connect()
 
-	dopplerProxy := makeDopplerProxy(adapter, config, logger, dopplerproxy.DefaultHandlerProvider)
+	dopplerProxy := makeDopplerProxy(adapter, config, logger, doppler_endpoint.WebsocketHandlerProvider)
 	startOutgoingDopplerProxy(net.JoinHostPort(dopplerProxy.IpAddress, strconv.FormatUint(uint64(config.OutgoingDropsondePort), 10)), dopplerProxy)
 
 	proxy := makeLegacyProxy(adapter, config, logger)
@@ -196,7 +197,7 @@ func MakeProvider(adapter storeadapter.StoreAdapter, storeKeyPrefix string, outg
 }
 
 func makeLegacyProxy(adapter storeadapter.StoreAdapter, config *Config, logger *gosteno.Logger) *legacyproxy.Proxy {
-	legacyHandlerProvider := legacyproxy.NewLegacyHandlerProvider(dopplerproxy.DefaultHandlerProvider)
+	legacyHandlerProvider := legacyproxy.NewLegacyHandlerProvider(doppler_endpoint.WebsocketHandlerProvider)
 	dopplerProxy := makeDopplerProxy(adapter, config, logger, legacyHandlerProvider)
 
 	builder := legacyproxy.NewProxyBuilder()
@@ -231,7 +232,7 @@ func setupMonitoring(proxy *legacyproxy.Proxy, config *Config, logger *gosteno.L
 	}()
 }
 
-func makeDopplerProxy(adapter storeadapter.StoreAdapter, config *Config, logger *gosteno.Logger, handlerProvider dopplerproxy.HandlerProvider) *dopplerproxy.Proxy {
+func makeDopplerProxy(adapter storeadapter.StoreAdapter, config *Config, logger *gosteno.Logger, handlerProvider doppler_endpoint.HandlerProvider) *dopplerproxy.Proxy {
 	authorizer := authorization.NewLogAccessAuthorizer(config.ApiHost, config.SkipCertVerify)
 	uaaClient := uaa_client.NewUaaClient(config.UaaHost, config.UaaClientId, config.UaaClientSecret, config.SkipCertVerify)
 	adminAuthorizer := authorization.NewAdminAccessAuthorizer(&uaaClient)
