@@ -21,8 +21,15 @@ func NewDopplerEndpoint(
 	endpoint string,
 	streamId string,
 	reconnect bool,
-	hProvider HandlerProvider,
 ) DopplerEndpoint {
+
+	var hProvider HandlerProvider
+	if endpoint == "recentlogs" {
+		hProvider = HttpHandlerProvider
+	} else {
+		hProvider = WebsocketHandlerProvider
+
+	}
 
 	return DopplerEndpoint{
 		Endpoint:  endpoint,

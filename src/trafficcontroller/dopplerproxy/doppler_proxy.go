@@ -83,7 +83,7 @@ func (proxy *Proxy) serveFirehose(writer http.ResponseWriter, request *http.Requ
 	clientAddress := request.RemoteAddr
 	authToken := getAuthToken(request)
 
-	dopplerEndpont := doppler_endpoint.NewDopplerEndpoint(FIREHOSE_ID, FIREHOSE_ID, true, doppler_endpoint.WebsocketHandlerProvider)
+	dopplerEndpont := doppler_endpoint.NewDopplerEndpoint(FIREHOSE_ID, FIREHOSE_ID, true)
 
 	authorizer := func(appId, authToken string, logger *gosteno.Logger) bool {
 		return proxy.adminAuthorize(authToken, logger)
@@ -141,9 +141,9 @@ func (proxy *Proxy) serveAppLogs(writer http.ResponseWriter, request *http.Reque
 	var dopplerEndpoint doppler_endpoint.DopplerEndpoint
 
 	if endpoint_type == "recentlogs" {
-		dopplerEndpoint = doppler_endpoint.NewDopplerEndpoint(endpoint_type, appId, reconnect, doppler_endpoint.HttpHandlerProvider)
+		dopplerEndpoint = doppler_endpoint.NewDopplerEndpoint(endpoint_type, appId, reconnect)
 	} else {
-		dopplerEndpoint = doppler_endpoint.NewDopplerEndpoint(endpoint_type, appId, reconnect, doppler_endpoint.WebsocketHandlerProvider)
+		dopplerEndpoint = doppler_endpoint.NewDopplerEndpoint(endpoint_type, appId, reconnect)
 	}
 
 	proxy.serveWithDoppler(writer, request, dopplerEndpoint)
