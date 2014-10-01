@@ -1,6 +1,7 @@
 package uaa_client
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -14,28 +15,35 @@ type UaaClient interface {
 }
 
 type uaaClient struct {
-	address string
-	id      string
-	secret  string
+	address        string
+	id             string
+	secret         string
+	skipCertVerify bool
 }
 
-func NewUaaClient(address, id, secret string) uaaClient {
+func NewUaaClient(address, id, secret string, skipCertVerify bool) uaaClient {
 
 	return uaaClient{
-		address: address,
-		id:      id,
-		secret:  secret,
+		address:        address,
+		id:             id,
+		secret:         secret,
+		skipCertVerify: skipCertVerify,
 	}
 }
 
 func (client *uaaClient) GetAuthData(token string) (*AuthData, error) {
+
 	formValues := url.Values{"token": []string{token}}
 
 	req, _ := http.NewRequest("POST", client.address+"/check_token", strings.NewReader(formValues.Encode()))
 	req.SetBasicAuth(client.id, client.secret)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	httpClient := &http.Client{}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: client.skipCertVerify},
+	}
+
+	httpClient := &http.Client{Transport: tr}
 	response, err := httpClient.Do(req)
 
 	if err != nil {

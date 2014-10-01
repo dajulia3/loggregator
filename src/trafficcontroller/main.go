@@ -29,6 +29,7 @@ import (
 	"trafficcontroller/listener"
 	"trafficcontroller/marshaller"
 	"trafficcontroller/serveraddressprovider"
+	"trafficcontroller/uaa_client"
 )
 
 var DefaultStoreAdapterProvider = func(urls []string, concurrentRequests int) storeadapter.StoreAdapter {
@@ -55,6 +56,9 @@ type Config struct {
 	OutgoingDropsondePort uint32
 	SystemDomain          string
 	SkipCertVerify        bool
+	UaaHost               string
+	UaaClientId           string
+	UaaClientSecret       string
 }
 
 func (c *Config) setDefaults() {
@@ -229,7 +233,8 @@ func setupMonitoring(proxy *legacyproxy.Proxy, config *Config, logger *gosteno.L
 
 func makeDopplerProxy(adapter storeadapter.StoreAdapter, config *Config, logger *gosteno.Logger, handlerProvider dopplerproxy.HandlerProvider) *dopplerproxy.Proxy {
 	authorizer := authorization.NewLogAccessAuthorizer(config.ApiHost, config.SkipCertVerify)
-	adminAuthorizer := authorization.NewAdminAccessAuthorizer(config.ApiHost, config.SkipCertVerify)
+	uaaClient := uaa_client.NewUaaClient(config.UaaHost, config.UaaClientId, config.UaaClientSecret, config.SkipCertVerify)
+	adminAuthorizer := authorization.NewAdminAccessAuthorizer(&uaaClient)
 	provider := MakeProvider(adapter, "/healthstatus/doppler", config.DopplerPort, logger)
 	cgc := channel_group_connector.NewChannelGroupConnector(provider, newWebsocketListener, marshaller.DropsondeLogMessage, logger)
 	proxy := dopplerproxy.NewDopplerProxy(authorizer, adminAuthorizer, handlerProvider, cgc, config.Config, logger)

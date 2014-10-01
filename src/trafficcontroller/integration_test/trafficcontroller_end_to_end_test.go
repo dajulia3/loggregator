@@ -15,6 +15,7 @@ import (
 	"time"
 	"trafficcontroller/integration_test/fake_auth_server"
 	"trafficcontroller/integration_test/fake_doppler"
+	"trafficcontroller/integration_test/fake_uaa_server"
 	"trafficcontroller/integration_test/traffic_controller_client"
 
 	"errors"
@@ -30,14 +31,19 @@ var localIPAddress string
 var fakeDoppler *fake_doppler.FakeDoppler
 
 var _ = BeforeSuite(func() {
+	killEtcdCmd := exec.Command("pkill", "etcd")
+	killEtcdCmd.Run()
+
 	setupEtcdAdapter()
 	setupDopplerInEtcd()
 	setupFakeDoppler()
+	setupFakeAuthServer()
+	setupFakeUaaServer()
 
 	pathToTrafficControllerExec, err := gexec.Build("trafficcontroller")
 	Expect(err).ShouldNot(HaveOccurred())
 
-	command = exec.Command(pathToTrafficControllerExec, "--config=fixtures/trafficcontroller.json", "--debug=true", "DROPSONDE_ORIGIN=TCT")
+	command = exec.Command(pathToTrafficControllerExec, "--config=fixtures/trafficcontroller.json", "--debug=true")
 	command.Start()
 
 	localIPAddress, _ = localip.LocalIP()
@@ -54,8 +60,6 @@ var _ = BeforeSuite(func() {
 		_, err := http.Get(trafficControllerDropsondeEndpoint)
 		return err
 	}).ShouldNot(HaveOccurred())
-
-	setupFakeAuthServer()
 })
 
 var _ = AfterSuite(func() {
@@ -95,6 +99,15 @@ var setupFakeAuthServer = func() {
 
 	Eventually(func() error {
 		_, err := http.Get("http://" + localIPAddress + ":42123")
+		return err
+	}).ShouldNot(HaveOccurred())
+}
+
+var setupFakeUaaServer = func() {
+	fakeUaaServer := &fake_uaa_server.FakeUaaHandler{}
+	go http.ListenAndServe(":5678", fakeUaaServer)
+	Eventually(func() error {
+		_, err := http.Get("http://" + localIPAddress + ":5678/check_token")
 		return err
 	}).ShouldNot(HaveOccurred())
 }
@@ -155,24 +168,7 @@ var _ = Describe("TrafficController", func() {
 		})
 
 		Context("Firehose", func() {
-			It("indicates authorization failure when a nonprivileged user requests firehose messages", func() {
-				println("Entered test that will fail")
-				client4 := &traffic_controller_client.TrafficControllerClient{
-					ApiEndpoint: fmt.Sprintf("ws://%v:%v/%v", localIPAddress, 4566, "firehose"),
-				}
-				err, response := client4.Start()
-
-				Expect(err).To(HaveOccurred())
-
-				responseBody, _ := ioutil.ReadAll(response.Body)
-				Expect(responseBody).To(BeEquivalentTo("You are not authorized. Error: Invalid authorization"))
-				println("Leaving test that should have failed")
-			})
-
 			It("passes messages through for every app for uaa admins", func() {
-				//							FakeAuthServer.start({"jti":"b2c4bfd7-9b24-4d11-971d-52b85eea5d7d","sub":"a0358abb-1d92-4195-b349-a7edec6e9fa9","scope":["uaa.admin"],"client_id":"cf","cid":"cf","grant_type":"password","user_id":"a0358abb-1d92-4195-b349-a7edec6e9fa9","user_name":"marissa","email":"marissa@test.org","iat":1412017445,"exp":1412060645,"iss":"http://localhost:8080/uaa/oauth/token","aud":null})
-
-				println("entered test that should pass")
 				client5 := &traffic_controller_client.TrafficControllerClient{ApiEndpoint: fmt.Sprintf("ws://%v:%v/%v", localIPAddress, 4566, "firehose")}
 				go client5.Start()
 				var request *http.Request
@@ -186,8 +182,6 @@ var _ = Describe("TrafficController", func() {
 				}, 5).Should(BeTrue())
 
 				client5.Stop()
-
-				println("Leaving test that should pass")
 			})
 		})
 	})

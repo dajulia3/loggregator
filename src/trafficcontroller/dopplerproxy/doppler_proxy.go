@@ -8,12 +8,14 @@ import (
 	"github.com/cloudfoundry/loggregatorlib/cfcomponent/instrumentation"
 	"github.com/cloudfoundry/loggregatorlib/logmessage"
 	"github.com/cloudfoundry/loggregatorlib/server/handlers"
+//	"trafficcontroller/doppler_endpoint"
 	"net/http"
 	"net/url"
 	"regexp"
 	"time"
 	"trafficcontroller/authorization"
 	"trafficcontroller/channel_group_connector"
+
 )
 
 const (

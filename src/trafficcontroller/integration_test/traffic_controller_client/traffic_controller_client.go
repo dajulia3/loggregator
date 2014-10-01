@@ -22,7 +22,7 @@ type TrafficControllerClient struct {
 
 func (client *TrafficControllerClient) Start() (error, *http.Response) {
 
-	authToken := "bearer fake-token"
+	authToken := "bearer iAmAnAdmin"
 	url := client.ApiEndpoint
 
 	header := http.Header{"Origin": []string{"http://localhost"}, "Authorization": []string{authToken}}
